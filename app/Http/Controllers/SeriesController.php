@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\SeriesCreated as EventsSeriesCreated;
 use App\Http\Requests\SeriesFormRequest;
+use App\Jobs\DeleteSeriesCover;
 use App\Mail\SeriesCreated;
 use App\Models\Series;
 use App\Models\User;
@@ -35,23 +37,24 @@ class SeriesController extends Controller
 
     public function store(SeriesFormRequest $request)
     {
+        $coverPath = $request->file('cover')?->store('series_cover', 'public');
+        $request->coverPath = $coverPath;
         $serie = $this->repository->add($request);
 
-        $userList = User::all();
-        foreach ($userList as $index => $user) {
-            $email = new SeriesCreated(
-                $serie->nome,
-                $serie->id,
-                $request->seasonsQty,
-                $request->episodesPerSeason
-            );
-            
-            // Mail::to($user)->queue($email);
-            // $now = new DateTime();
-            // $now->modify($index * 2 . 'seconds');
-            $when = now()->addSeconds($index * 5);
-            Mail::to($user)->later($when, $email);
-        }
+        // $eventsSeriesCreated = new EventsSeriesCreated(
+        //     $serie->seriesName,
+        //     $serie->serieId,
+        //     $request->serieSeasonsQty,
+        //     $request->serieEpisodesPerSeason
+        // );
+        // event($eventsSeriesCreated);
+
+        EventsSeriesCreated::dispatch(
+            $serie->nome,
+            $serie->id,
+            $request->seasonsQty,
+            $request->episodesPerSeason
+        );
 
         return to_route('series.index')
             ->with('mensagem.sucesso', "Série '{$serie->nome}' adicionada com sucesso");
@@ -60,6 +63,7 @@ class SeriesController extends Controller
     public function destroy(Series $series)
     {
         $series->delete();
+        DeleteSeriesCover::dispatch($series->cover);
 
         return to_route('series.index')
             ->with('mensagem.sucesso', "Série '{$series->nome}' removida com sucesso");
